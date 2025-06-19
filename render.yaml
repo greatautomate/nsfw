@@ -1,0 +1,33 @@
+services:
+  - type: worker
+    name: telegram-dual-account-bot
+    env: docker
+    dockerfilePath: ./Dockerfile
+    plan: starter
+    envVars:
+      # Required - API Credentials
+      - key: API_ID
+        sync: false
+      - key: API_HASH
+        sync: false
+
+      # Required - Session Strings
+      - key: ACCOUNT1_SESSION
+        sync: false
+      - key: ACCOUNT2_SESSION
+        sync: false
+
+      # Required - Target Bot
+      - key: BOT_USERNAME
+        sync: false
+
+      # Optional - Custom Messages (will use defaults if not provided)
+      - key: MESSAGE_ACCOUNT1
+        sync: false
+      - key: MESSAGE_ACCOUNT2
+        sync: false
+
+      # EXECUTION_MODE and SEND_ON_START are removed - using defaults
+    scaling:
+      minInstances: 1
+      maxInstances: 1

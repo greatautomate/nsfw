@@ -5,7 +5,11 @@ from pyrogram import Client
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 import logging
 
-# Configure logging
+# Suppress pyrogram background noise
+logging.getLogger('pyrogram').setLevel(logging.WARNING)
+logging.getLogger('asyncio').setLevel(logging.WARNING)
+
+# Configure main logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
@@ -24,6 +28,10 @@ class TelegramDualAccountBot:
         self.bot_username = os.getenv('BOT_USERNAME')
         self.message_account1 = os.getenv('MESSAGE_ACCOUNT1', 'Hello from Account 1! 🚀')
         self.message_account2 = os.getenv('MESSAGE_ACCOUNT2', 'Hello from Account 2! 🎯')
+
+        # Message format options
+        self.add_counter = os.getenv('ADD_COUNTER', 'false').lower() == 'true'
+        self.add_timestamp = os.getenv('ADD_TIMESTAMP', 'false').lower() == 'true'
 
         # Default values - no need to set during deployment
         self.execution_mode = os.getenv('EXECUTION_MODE', 'concurrent').lower()
@@ -58,6 +66,21 @@ class TelegramDualAccountBot:
         logger.info(f"   📋 Execution Mode: {self.execution_mode.upper()}")
         logger.info(f"   🚀 Send on Start: {'YES' if self.send_on_start else 'NO'}")
         logger.info(f"   🎯 Target Bot: {self.bot_username}")
+        logger.info(f"   🔢 Add Counter: {'YES' if self.add_counter else 'NO'}")
+        logger.info(f"   ⏰ Add Timestamp: {'YES' if self.add_timestamp else 'NO'}")
+
+    def format_message(self, base_message, message_number, account_name):
+        """Format message based on settings"""
+        message = base_message
+
+        if self.add_counter:
+            message += f" - Message {message_number}/3"
+
+        if self.add_timestamp:
+            timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            message += f" at {timestamp}"
+
+        return message
 
     async def send_messages_account1(self):
         """Send 3 messages from Account 1 with 10-second intervals"""
@@ -65,8 +88,7 @@ class TelegramDualAccountBot:
             logger.info(f"🚀 Account 1: Starting to send messages to {self.bot_username}")
 
             for i in range(3):
-                timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                message_text = f"{self.message_account1} - Message {i+1}/3 at {timestamp}"
+                message_text = self.format_message(self.message_account1, i+1, "Account 1")
 
                 await self.client_account1.send_message(
                     chat_id=self.bot_username,
@@ -90,8 +112,7 @@ class TelegramDualAccountBot:
             logger.info(f"🎯 Account 2: Starting to send messages to {self.bot_username}")
 
             for i in range(3):
-                timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                message_text = f"{self.message_account2} - Message {i+1}/3 at {timestamp}"
+                message_text = self.format_message(self.message_account2, i+1, "Account 2")
 
                 await self.client_account2.send_message(
                     chat_id=self.bot_username,

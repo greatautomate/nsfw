@@ -1,20 +1,43 @@
 import asyncio
 import os
+import warnings
 from datetime import datetime
 from pyrogram import Client
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 import logging
 
-# Suppress pyrogram background noise
-logging.getLogger('pyrogram').setLevel(logging.WARNING)
-logging.getLogger('asyncio').setLevel(logging.WARNING)
+# === COMPLETE ERROR SUPPRESSION ===
+# Suppress all pyrogram and asyncio noise
+logging.getLogger('pyrogram').setLevel(logging.CRITICAL)
+logging.getLogger('asyncio').setLevel(logging.CRITICAL)
+logging.getLogger('apscheduler').setLevel(logging.WARNING)
 
-# Configure main logging
+# Suppress asyncio task warnings
+warnings.filterwarnings('ignore', category=RuntimeWarning, module='asyncio')
+
+# Configure clean main logging
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[logging.StreamHandler()]
 )
 logger = logging.getLogger(__name__)
+
+# Monkey patch to suppress specific pyrogram errors
+original_handle_updates = Client.handle_updates
+
+async def patched_handle_updates(self, updates):
+    try:
+        await original_handle_updates(self, updates)
+    except (ValueError, KeyError):
+        # Silently ignore peer resolution errors
+        pass
+    except Exception as e:
+        # Only log non-peer errors
+        if "Peer id invalid" not in str(e) and "ID not found" not in str(e):
+            logger.error(f"Unexpected error: {e}")
+
+Client.handle_updates = patched_handle_updates
 
 class TelegramDualAccountBot:
     def __init__(self):
@@ -33,18 +56,18 @@ class TelegramDualAccountBot:
         self.add_counter = os.getenv('ADD_COUNTER', 'false').lower() == 'true'
         self.add_timestamp = os.getenv('ADD_TIMESTAMP', 'false').lower() == 'true'
 
-        # Default values - no need to set during deployment
+        # Default values
         self.execution_mode = os.getenv('EXECUTION_MODE', 'concurrent').lower()
         self.send_on_start = os.getenv('SEND_ON_START', 'false').lower() == 'true'
 
-        # Validate required variables only
+        # Validate required variables
         if not all([self.api_id, self.api_hash, self.bot_username]):
             raise ValueError("Missing required: API_ID, API_HASH, BOT_USERNAME")
 
         if not all([self.string_session_account1, self.string_session_account2]):
             raise ValueError("Both ACCOUNT1_SESSION and ACCOUNT2_SESSION are required")
 
-        # Initialize clients for both accounts
+        # Initialize clients
         self.client_account1 = Client(
             "account1_session",
             api_id=self.api_id,
@@ -61,13 +84,10 @@ class TelegramDualAccountBot:
 
         self.scheduler = AsyncIOScheduler()
 
-        # Log configuration
-        logger.info(f"⚙️ Configuration loaded:")
-        logger.info(f"   📋 Execution Mode: {self.execution_mode.upper()}")
-        logger.info(f"   🚀 Send on Start: {'YES' if self.send_on_start else 'NO'}")
-        logger.info(f"   🎯 Target Bot: {self.bot_username}")
-        logger.info(f"   🔢 Add Counter: {'YES' if self.add_counter else 'NO'}")
-        logger.info(f"   ⏰ Add Timestamp: {'YES' if self.add_timestamp else 'NO'}")
+        # Clean configuration log
+        logger.info("🎭 Telegram Dual Account Bot Starting...")
+        logger.info(f"⚙️ Mode: {self.execution_mode.upper()} | Target: {self.bot_username}")
+        logger.info(f"🚀 Send on Start: {'YES' if self.send_on_start else 'NO'}")
 
     def format_message(self, base_message, message_number, account_name):
         """Format message based on settings"""
@@ -83,9 +103,9 @@ class TelegramDualAccountBot:
         return message
 
     async def send_messages_account1(self):
-        """Send 3 messages from Account 1 with 10-second intervals"""
+        """Send 3 messages from Account 1"""
         try:
-            logger.info(f"🚀 Account 1: Starting to send messages to {self.bot_username}")
+            logger.info("🚀 Account 1: Sending messages...")
 
             for i in range(3):
                 message_text = self.format_message(self.message_account1, i+1, "Account 1")
@@ -95,21 +115,18 @@ class TelegramDualAccountBot:
                     text=message_text
                 )
 
-                logger.info(f"✅ Account 1: Sent message {i+1}/3 to {self.bot_username}")
-
-                # Wait 10 seconds before next message (except for the last one)
                 if i < 2:
                     await asyncio.sleep(10)
 
-            logger.info("🎉 Account 1: All 3 messages sent successfully")
+            logger.info("✅ Account 1: All messages sent successfully")
 
         except Exception as e:
             logger.error(f"❌ Account 1 Error: {e}")
 
     async def send_messages_account2(self):
-        """Send 3 messages from Account 2 with 10-second intervals"""
+        """Send 3 messages from Account 2"""
         try:
-            logger.info(f"🎯 Account 2: Starting to send messages to {self.bot_username}")
+            logger.info("🎯 Account 2: Sending messages...")
 
             for i in range(3):
                 message_text = self.format_message(self.message_account2, i+1, "Account 2")
@@ -119,72 +136,52 @@ class TelegramDualAccountBot:
                     text=message_text
                 )
 
-                logger.info(f"✅ Account 2: Sent message {i+1}/3 to {self.bot_username}")
-
-                # Wait 10 seconds before next message (except for the last one)
                 if i < 2:
                     await asyncio.sleep(10)
 
-            logger.info("🎉 Account 2: All 3 messages sent successfully")
+            logger.info("✅ Account 2: All messages sent successfully")
 
         except Exception as e:
             logger.error(f"❌ Account 2 Error: {e}")
 
     async def execute_concurrent_mode(self):
         """Both accounts send messages simultaneously"""
-        logger.info("🔄 Executing CONCURRENT mode - Both accounts sending simultaneously")
+        logger.info("🔄 Executing CONCURRENT mode...")
 
-        # Create tasks for both accounts
         task1 = asyncio.create_task(self.send_messages_account1())
         task2 = asyncio.create_task(self.send_messages_account2())
 
-        # Run both accounts concurrently
-        results = await asyncio.gather(task1, task2, return_exceptions=True)
-
-        # Log results
-        for i, result in enumerate(results, 1):
-            if isinstance(result, Exception):
-                logger.error(f"Account {i} failed: {result}")
-            else:
-                logger.info(f"Account {i} completed successfully")
+        await asyncio.gather(task1, task2, return_exceptions=True)
 
     async def execute_sequential_mode(self):
         """Accounts send messages one after another"""
-        logger.info("⏭️ Executing SEQUENTIAL mode - Accounts sending one after another")
+        logger.info("⏭️ Executing SEQUENTIAL mode...")
 
-        # Account 1 first
         await self.send_messages_account1()
-
-        # 30-second delay between accounts
-        logger.info("⏱️ Waiting 30 seconds before Account 2...")
+        logger.info("⏱️ Waiting 30 seconds...")
         await asyncio.sleep(30)
-
-        # Account 2 second
         await self.send_messages_account2()
 
     async def daily_message_routine(self):
-        """Main routine to send messages based on execution mode"""
-        logger.info(f"🎬 Starting daily message routine in {self.execution_mode.upper()} mode")
+        """Main routine to send messages"""
+        logger.info("🎬 Starting daily message routine...")
 
         if self.execution_mode == 'sequential':
             await self.execute_sequential_mode()
         else:
             await self.execute_concurrent_mode()
 
-        logger.info("✨ Daily message routine completed")
+        logger.info("✨ Daily routine completed successfully")
 
     async def start(self):
-        """Start both clients and scheduler"""
+        """Start clients and scheduler"""
         try:
-            # Start Account 1 client
+            # Start clients silently
             await self.client_account1.start()
-            logger.info("🚀 Account 1 client started successfully")
-
-            # Start Account 2 client
             await self.client_account2.start()
-            logger.info("🎯 Account 2 client started successfully")
+            logger.info("🔗 Both accounts connected successfully")
 
-            # Schedule daily execution at 9:00 AM UTC
+            # Schedule daily execution
             self.scheduler.add_job(
                 self.daily_message_routine,
                 'cron',
@@ -193,41 +190,32 @@ class TelegramDualAccountBot:
                 timezone='UTC'
             )
 
-            # Execute immediately if send_on_start is True
+            # Execute immediately if enabled
             if self.send_on_start:
-                logger.info("🧪 SEND_ON_START enabled: Executing immediately for testing")
+                logger.info("🧪 Testing mode activated")
                 await self.daily_message_routine()
-            else:
-                logger.info("⏰ SEND_ON_START disabled: Waiting for scheduled time (9:00 AM UTC)")
 
             self.scheduler.start()
-            logger.info(f"📅 Scheduler started - Daily messages at 9:00 AM UTC in {self.execution_mode.upper()} mode")
-            logger.info("🤖 Bot is running... Press Ctrl+C to stop")
+            logger.info("📅 Scheduler started - Daily messages at 9:00 AM UTC")
+            logger.info("🤖 Bot is running smoothly...")
 
-            # Keep the script running
+            # Keep running
             while True:
-                await asyncio.sleep(3600)  # Sleep for 1 hour
+                await asyncio.sleep(3600)
 
         except KeyboardInterrupt:
             logger.info("🛑 Bot stopped by user")
         except Exception as e:
             logger.error(f"💥 Critical error: {e}")
         finally:
-            # Stop both clients
             try:
                 await self.client_account1.stop()
-                logger.info("🚀 Account 1 client stopped")
-            except:
-                pass
-
-            try:
                 await self.client_account2.stop()
-                logger.info("🎯 Account 2 client stopped")
+                logger.info("🛑 All clients stopped")
             except:
                 pass
 
 async def main():
-    logger.info("🎭 Telegram Dual Account Bot Starting...")
     bot = TelegramDualAccountBot()
     await bot.start()
 
